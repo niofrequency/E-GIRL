@@ -1,11 +1,10 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { pathToFileURL } = require('url');
 
 let mainWindow;
-let tray = null;
 let isClickThrough = false;
-let lastVideoPath = null;
 
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
 
@@ -39,15 +38,22 @@ function createWindow() {
     skipTaskbar: true,
     hasShadow: false,
     backgroundColor: '#00000000',
+    titleBarStyle: 'hidden',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js')
+      preload: path.join(__dirname, 'preload.js'),
+      webSecurity: false
     }
   });
 
   mainWindow.loadFile('index.html');
   mainWindow.setAlwaysOnTop(true, 'screen-saver');
+
+  // Force transparency on macOS
+  if (process.platform === 'darwin') {
+    mainWindow.setVibrancy(null);
+  }
 
   mainWindow.on('moved', () => {
     const bounds = mainWindow.getBounds();
@@ -70,46 +76,29 @@ function createWindow() {
   });
 
   if (settings.lastVideo && fs.existsSync(settings.lastVideo)) {
-    lastVideoPath = settings.lastVideo;
     setTimeout(() => {
       mainWindow.webContents.send('load-video', settings.lastVideo);
-    }, 500);
-  }
-}
-
-function createTray() {
-  // Simple tray icon using a data URL or skip if no icon
-  try {
-    const icon = nativeImage.createEmpty();
-    tray = new Tray(icon);
-    const contextMenu = Menu.buildFromTemplate([
-      { label: 'Open Video', click: openVideo },
-      { label: 'Toggle Click-Through', click: toggleClickThrough },
-      { type: 'separator' },
-      { label: 'Quit', click: () => app.quit() }
-    ]);
-    tray.setToolTip('E-GIRL Overlay');
-    tray.setContextMenu(contextMenu);
-  } catch (e) {
-    console.log('Tray not available:', e);
+    }, 800);
   }
 }
 
 function openVideo() {
+  if (!mainWindow) return;
   dialog.showOpenDialog(mainWindow, {
     properties: ['openFile'],
     filters: [
-      { name: 'Videos', extensions: ['webm', 'mp4', 'mov', 'gif', 'avi', 'mkv'] }
+      { name: 'Videos', extensions: ['webm', 'mp4', 'mov', 'gif', 'avi', 'mkv', 'm4v'] }
     ]
   }).then(result => {
     if (!result.canceled && result.filePaths.length > 0) {
       const filePath = result.filePaths[0];
-      lastVideoPath = filePath;
       const settings = loadSettings();
       settings.lastVideo = filePath;
       saveSettings(settings);
       mainWindow.webContents.send('load-video', filePath);
     }
+  }).catch(err => {
+    console.error('Dialog error:', err);
   });
 }
 
@@ -122,19 +111,27 @@ function toggleClickThrough() {
 }
 
 app.whenReady().then(() => {
+  // Register custom protocol for local files
+  protocol.registerFileProtocol('local-video', (request, callback) => {
+    const url = request.url.replace('local-video://', '');
+    try {
+      return callback(decodeURIComponent(url));
+    } catch (error) {
+      console.error(error);
+    }
+  });
+
   createWindow();
-  createTray();
 
   ipcMain.handle('open-video', openVideo);
   ipcMain.handle('toggle-click-through', toggleClickThrough);
   ipcMain.handle('set-opacity', (event, opacity) => {
-    if (mainWindow) mainWindow.setOpacity(opacity);
+    if (mainWindow) mainWindow.setOpacity(Math.max(0.1, Math.min(1, opacity)));
     const settings = loadSettings();
     settings.opacity = opacity;
     saveSettings(settings);
   });
   ipcMain.handle('close-app', () => app.quit());
-  ipcMain.handle('minimize-app', () => mainWindow?.minimize());
 });
 
 app.on('window-all-closed', () => {
