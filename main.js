@@ -5,6 +5,7 @@ const fs = require('fs');
 let mainWindow;
 let tray = null;
 let isClickThrough = false;
+let lastVideoPath = null;
 
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
 
@@ -69,9 +70,28 @@ function createWindow() {
   });
 
   if (settings.lastVideo && fs.existsSync(settings.lastVideo)) {
+    lastVideoPath = settings.lastVideo;
     setTimeout(() => {
       mainWindow.webContents.send('load-video', settings.lastVideo);
     }, 500);
+  }
+}
+
+function createTray() {
+  // Simple tray icon using a data URL or skip if no icon
+  try {
+    const icon = nativeImage.createEmpty();
+    tray = new Tray(icon);
+    const contextMenu = Menu.buildFromTemplate([
+      { label: 'Open Video', click: openVideo },
+      { label: 'Toggle Click-Through', click: toggleClickThrough },
+      { type: 'separator' },
+      { label: 'Quit', click: () => app.quit() }
+    ]);
+    tray.setToolTip('E-GIRL Overlay');
+    tray.setContextMenu(contextMenu);
+  } catch (e) {
+    console.log('Tray not available:', e);
   }
 }
 
@@ -84,6 +104,7 @@ function openVideo() {
   }).then(result => {
     if (!result.canceled && result.filePaths.length > 0) {
       const filePath = result.filePaths[0];
+      lastVideoPath = filePath;
       const settings = loadSettings();
       settings.lastVideo = filePath;
       saveSettings(settings);
@@ -102,6 +123,7 @@ function toggleClickThrough() {
 
 app.whenReady().then(() => {
   createWindow();
+  createTray();
 
   ipcMain.handle('open-video', openVideo);
   ipcMain.handle('toggle-click-through', toggleClickThrough);
@@ -112,8 +134,13 @@ app.whenReady().then(() => {
     saveSettings(settings);
   });
   ipcMain.handle('close-app', () => app.quit());
+  ipcMain.handle('minimize-app', () => mainWindow?.minimize());
 });
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });

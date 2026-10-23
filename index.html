@@ -154,6 +154,7 @@
       showStatus(`Click-through ${state ? 'enabled' : 'disabled'}`);
     });
 
+    // Drag and drop support
     document.addEventListener('dragover', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -175,6 +176,7 @@
       }
     });
 
+    // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
       if (e.ctrlKey && e.shiftKey && e.key === 'T') {
         window.electronAPI.toggleClickThrough();

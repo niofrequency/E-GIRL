@@ -28,7 +28,14 @@
       "target": [
         "nsis",
         "portable"
-      ]
+      ],
+      "icon": "icon.ico"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
     }
   }
 }
